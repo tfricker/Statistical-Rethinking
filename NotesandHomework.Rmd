@@ -1,3 +1,8 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
 ### Statistcial Rethinking
 
 Load Packages
@@ -10,8 +15,95 @@ install_github("rmcelreath/rethinking",ref="Experimental")
 
 ## Lecture 3
 
+Load data
+```{r}
+library(rethinking)
+data(Howell1)
+d <- Howell1
+```
+
+```{r}
+str(d)
+precis(d)
+```
+
+Filter the data frame to indiviudals of age 18 or greater.
+```{r}
+d2 <- d[ d$age >= 18 , ]
+```
+
+Plot the priors
+```{r}
+curve( dnorm( x , 178 , 20 ) , from=100 , to=250 )
+curve( dunif( x , 0 , 50 ) , from=-10 , to=60 )
+```
+
+Prior predicitive check.
+```{r}
+sample_mu <- rnorm( 1e4 , 178 , 20 )
+sample_sigma <- runif( 1e4 , 0 , 50 )
+prior_h <- rnorm( 1e4 , sample_mu , sample_sigma )
+dens( prior_h )
+```
+
+Flatter and less informative prior.
+```{r}
+sample_mu <- rnorm( 1e4 , 178 , 100 )
+prior_h <- rnorm( 1e4 , sample_mu , sample_sigma )
+dens( prior_h )
+```
+
 Quadratic approximation
 ```{r}
-
+mu.list <- seq( from=140, to=160 , length.out=200 )
+sigma.list <- seq( from=4 , to=9 , length.out=200 )
+post <- expand.grid( mu=mu.list , sigma=sigma.list )
+post$LL <- sapply( 1:nrow(post) , function(i) sum( dnorm(
+d2$height ,
+mean=post$mu[i] ,
+sd=post$sigma[i] ,
+log=TRUE ) ) )
+post$prod <- post$LL + dnorm( post$mu , 178 , 20 , TRUE ) +
+dunif( post$sigma , 0 , 50 , TRUE )
+post$prob <- exp( post$prod - max(post$prod) )
 ```
+
+Inspect the posterior distribution. First with a simple contour plot and then with a simple heat map.
+```{r}
+contour_xyz( post$mu , post$sigma , post$prob )
+image_xyz( post$mu , post$sigma , post$prob )
+```
+
+Sample from the posterior.
+```{r}
+sample.rows <- sample( 1:nrow(post) , size=1e4 , replace=TRUE ,
+prob=post$prob )
+sample.mu <- post$mu[ sample.rows ]
+sample.sigma <- post$sigma[ sample.rows ]
+```
+
+You end up with 10,000 samples, with replacement, from the posterior for the height data.
+Take a look at these samples:
+```{r}
+plot(sample.mu , sample.sigma , cex=.5 , pch=16 , col=col.alpha(rangi2,0.1) )
+```
+
+Summarize the samples
+```{r}
+dens( sample.mu )
+dens( sample.sigma )
+
+HPDI( sample.mu )
+HPDI( sample.sigma )
+```
+
+
+
+
+
+
+
+
+
+
 
