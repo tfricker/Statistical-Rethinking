@@ -11,7 +11,7 @@ library(devtools)
 
 ## Lecture 3
 
-Load the data
+Load the data used in the chapter.
 ```{r}
 library(rethinking)
 data(Howell1)
