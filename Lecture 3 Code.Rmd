@@ -1,3 +1,8 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
 ### Statistcial Rethinking
 
 Code associated with Lecture 3 of Richard's Winter course.
