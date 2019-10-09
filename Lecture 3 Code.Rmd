@@ -5,7 +5,7 @@ editor_options:
 ---
 ### Statistcial Rethinking
 
-Code associated with Lecture 3 of Richard's Winter course.
+Code associated with Lecture 3 of Richard's Winter course (Chapter 4 in the book).
 
 Begin by loading packages
 ```{r}
@@ -63,8 +63,7 @@ ggplot(data = df, aes(x = x, y = dunif(x, min = 0, max = 50))) +
   theme(panel.grid = element_blank())
 ```
 
-An essential part to modeling is the prior predicitive check. Once you’ve chosen priors for $h$, \mu, and \sigma, these imply a joint prior distribution of individual heights. By simulating from this distribution, you can see what your choices imply about observable height. This helps you diagnose bad choices. Also, remember every posterior is also
-potentially a prior for a subsequent analysis, so you can process priors just like posteriors.
+An essential part to modeling is the prior predicitive check. Once you’ve chosen priors for $h$, \mu, and \sigma, these imply a joint prior distribution of individual heights. By simulating from this distribution, you can see what your choices imply about observable height. This helps you diagnose bad choices. Also, remember every posterior is also potentially a prior for a subsequent analysis, so you can process priors just like posteriors.
 ```{r}
 sample_mu <- rnorm( 1e4 , 178 , 20 )
 sample_sigma <- runif( 1e4 , 0 , 50 )
@@ -102,7 +101,7 @@ d_grid <-data.frame(mu = seq(from = 140, to = 160, length.out = n),
 
 head(d_grid)
 
-d_grid$LL <- sapply( 1:nrow(d_grid) , function(i) sum( dnorm(
+d_grid$LL <- sapply( 1:nrow(d_grid) , function(i) sum(dnorm(
 d2$height ,
 mean=d_grid$mu[i] ,
 sd=d_grid$sigma[i] ,
@@ -243,14 +242,12 @@ posterior_samples(b4.3) %>%
 ```
 
 With centering, we can reduce the correlations among the parameters.
-
 ```{r}
 d2 <- d2 %>%
   mutate(weight_c = weight - mean(weight))
-
 ```
-Fit the weight_c model, b4.4.
 
+Fit the weight_c model, b4.4.
 ```{r}
 b4.4 <- 
   brm(data = d2, family = gaussian,
@@ -288,5 +285,99 @@ d2 %>%
   theme_bw() +
   theme(panel.grid = element_blank())
 ```
+
+## Practice 
+
+4H2 (a)
+```{r}
+d3 <- d %>%
+  filter(age < 18)
+```
+
+```{r}
+b4.5 <- brm(data = d3, family = gaussian,
+      formula = height ~ 1 + weight,
+      prior = c(prior(normal(110, 30), class = Intercept),
+                prior(cauchy(0, 1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+plot(b4.5)
+```
+
+Look at a summary of the model.
+```{r}
+posterior_summary(b4.5)[1:3, ]
+```
+
+4H2 (b)
+```{r}
+weight_seq <- tibble(weight = seq(from = min(d3$weight), to = max(d3$weight), by = 1))
+
+mu_summary <- data.frame(fitted(b4.5, 
+         newdata = weight_seq)) %>%
+   bind_cols(weight_seq)
+
+
+head(mu_summary)
+
+pred_height <- data.frame(predict(b4.5,
+          newdata = weight_seq)) %>%
+  bind_cols(weight_seq)
+
+ggplot(data = d3, aes(x = weight)) +
+  geom_ribbon(data = pred_height, 
+              aes(ymin = Q2.5, ymax = Q97.5),
+              fill = "grey83") +
+  geom_smooth(data = mu_summary,
+              aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+  #geom_abline(intercept = fixef(b4.5)[1], 
+  #            slope     = fixef(b4.5)[2]) +
+  geom_point(aes(y = height), shape = 1, size = 2, color = "royalblue") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+4H3 (Log of weight)
+```{r}
+b4.6 <- brm(data = d, family = gaussian,
+      formula = height ~ 1 + log(weight),
+      prior = c(prior(normal(140, 50), class = Intercept),
+                prior(cauchy(0, 1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+plot(b4.6)
+```
+
+```{r}
+weight_seq <- tibble(weight = seq(from = min(d$weight), to = max(d$weight), by = 1))
+
+mu_summary <- data.frame(fitted(b4.6, 
+         newdata = weight_seq)) %>%
+   bind_cols(weight_seq)
+
+
+head(mu_summary)
+
+pred_height <- data.frame(predict(b4.6,
+          newdata = weight_seq)) %>%
+  bind_cols(weight_seq)
+
+ggplot(data = d, aes(x = weight)) +
+  geom_ribbon(data = pred_height, 
+              aes(ymin = Q2.5, ymax = Q97.5),
+              fill = "grey83") +
+  geom_smooth(data = mu_summary,
+              aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+  #geom_abline(intercept = fixef(b4.5)[1], 
+  #            slope     = fixef(b4.5)[2]) +
+  geom_point(aes(y = height), shape = 1, size = 2, color = "royalblue") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
 
 
