@@ -11,6 +11,10 @@ Begin by loading packages
 ```{r}
 #install.packages(c("devtools","mvtnorm","loo","coda"),dependencies=TRUE)
 library(devtools)
+library(brms)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
 #install_github("rmcelreath/rethinking")
 ```
 
@@ -31,7 +35,8 @@ precis(d)
 
 Filter the data frame to indiviudals of age 18 or greater.
 ```{r}
-d2 <- d[d$age >= 18,]
+d2 <- d %>%
+  filter(age >= 18)
 ```
 
 The Model
@@ -39,8 +44,23 @@ The Model
 Whatever the prior, it’s a very good idea to plot your priors, so you have a sense of the
 assumption they build into the model. In this case:
 ```{r}
-curve( dnorm( x , 178 , 20 ) , from=100 , to=250 )
-curve( dunif( x , 0 , 50 ) , from=-10 , to=60 )
+df = data.frame(x = seq(from = 100, to = 250, by = .1))
+
+ggplot(data = df, aes(x = x, y = dnorm(x, mean = 178, sd = 20))) +
+  geom_line() +
+  ylab("density") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+```{r}
+df = data.frame(x = seq(from = -10, to = 60, by = .1))
+
+ggplot(data = df, aes(x = x, y = dunif(x, min = 0, max = 50))) +
+  geom_line() +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
 ```
 
 An essential part to modeling is the prior predicitive check. Once you’ve chosen priors for $h$, \mu, and \sigma, these imply a joint prior distribution of individual heights. By simulating from this distribution, you can see what your choices imply about observable height. This helps you diagnose bad choices. Also, remember every posterior is also
@@ -56,186 +76,155 @@ Prior predictive simulation is very useful for assigning sensible priors, becaus
 be quite hard to anticipate how priors influence the observable variables. As an example,
 consider a much flatter and less informative prior for \mu, like \mu ~ Normal(178, 100). Priors with such large standard deviations are quite common in Bayesian models, but the are hardly ever sensible. Let’s use simulation again to see the implied heights:
 ```{r}
-sample_mu <- rnorm( 1e4 , 178 , 100 )
-prior_h <- rnorm( 1e4 , sample_mu , sample_sigma )
-dens( prior_h )
+n <- 1000
+
+df = data.frame(sample_mu = rnorm(n, mean = 178, sd = 20),
+                sample_sigma = runif(n, min = 0, max = 50)) %>%
+  mutate(x = rnorm(n, mean = sample_mu, sd = sample_sigma))
+
+ ggplot(data = df, aes(x = x)) +
+  geom_density(fill = "black", size = 0) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
 ```
 
 Grid approximation
 ------------------
+
 ```{r}
-mu.list <- seq( from=140, to=160 , length.out=200 )
-sigma.list <- seq( from=4 , to=9 , length.out=200 )
-post <- expand.grid( mu=mu.list , sigma=sigma.list )
-post$LL <- sapply( 1:nrow(post) , function(i) sum( dnorm(
+n <- 200
+
+d_grid <-data.frame(mu = seq(from = 140, to = 160, length.out = n),
+                    sigma = seq(from = 4, to = 9, length.out = n)) %>% 
+  # we'll accomplish with `tidyr::expand()` what McElreath did with base R `expand.grid()`
+  expand(mu, sigma)
+
+head(d_grid)
+
+d_grid$LL <- sapply( 1:nrow(d_grid) , function(i) sum( dnorm(
 d2$height ,
-mean=post$mu[i] ,
-sd=post$sigma[i] ,
+mean=d_grid$mu[i] ,
+sd=d_grid$sigma[i] ,
 log=TRUE ) ) )
-post$prod <- post$LL + dnorm( post$mu , 178 , 20 , TRUE ) +
-dunif( post$sigma , 0 , 50 , TRUE )
-post$prob <- exp( post$prod - max(post$prod) )
+
+d_grid <- d_grid %>%
+  mutate(log_likelihood = LL,
+       prior_mu = dnorm(mu, mean = 178, sd  = 20, log = T),
+       prior_sigma = dunif(sigma, min  = 0,   max = 50, log = T)) %>% 
+  mutate(product = log_likelihood + prior_mu + prior_sigma) %>% 
+  mutate(probability = exp(product - max(product)))
+
+head(d_grid)
 ```
 
 Inspect the posterior distribution. First with a simple contour plot and then with a simple heat map.
 ```{r}
-contour_xyz( post$mu , post$sigma , post$prob )
-image_xyz( post$mu , post$sigma , post$prob )
+d_grid %>% 
+  ggplot(aes(x = mu, y = sigma, z = probability)) + 
+  geom_contour() +
+  labs(x = expression(mu),
+       y = expression(sigma)) +
+  coord_cartesian(xlim = range(d_grid$mu),
+                  ylim = range(d_grid$sigma)) +
+  theme(panel.grid = element_blank())
+```
+
+```{r}
+d_grid %>% 
+  ggplot(aes(x = mu, y = sigma)) + 
+  geom_raster(aes(fill = probability),
+              interpolate = T) +
+  scale_fill_viridis_c(option = "A") +
+  labs(x = expression(mu),
+       y = expression(sigma)) +
+  theme(panel.grid = element_blank())
 ```
 
 Sample from the posterior.
 --------------------------
 ```{r}
-sample.rows <- sample( 1:nrow(post) , size=1e4 , replace=TRUE ,
-prob=post$prob )
-sample.mu <- post$mu[ sample.rows ]
-sample.sigma <- post$sigma[ sample.rows ]
+d_grid_samples <- 
+  d_grid %>% 
+  sample_n(size = 1e4, replace = T, weight = probability)
 ```
 
 You end up with 10,000 samples, with replacement, from the posterior for the height data.
+
 Take a look at these samples:
 ```{r}
-plot(sample.mu , sample.sigma , cex=.5 , pch=16 , col=col.alpha(rangi2,0.1))
+d_grid_samples %>% 
+  ggplot(aes(x = mu, y = sigma)) + 
+  geom_point(size = .9, alpha = 1/15) +
+  scale_fill_viridis_c() +
+  labs(x = expression(mu[samples]),
+       y = expression(sigma[samples])) +
+  theme(panel.grid = element_blank())
 ```
 
 To characterize the shapes of the marginal posterior densities of \mu and \sigma, all we need to do is:
 ```{r}
-plot(density(sample.mu))
-plot(density(sample.sigma))
-
-HPDI( sample.mu )
-HPDI( sample.sigma )
+d_grid_samples %>% 
+  select(mu, sigma) %>% 
+  gather() %>%
+  ggplot(aes(x = value)) + 
+  geom_density(fill = "grey33", size = 0) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab(NULL) +
+  theme(panel.grid = element_blank()) +
+  facet_wrap(~key, scales = "free")
 ```
 
-Finding the posterior with quap---Quadratic approximation
+```{r}
+library(tidybayes)
+
+d_grid_samples %>% 
+  select(mu, sigma) %>% 
+  gather() %>% 
+  group_by(key) %>% 
+  mode_hdi(value)
+```
+
+
+Finding the posterior with brms---HMC
 ---------------------------------------------------------
 ```{r}
-flist <- alist(
-height ~ dnorm( mu , sigma ) ,
-mu ~ dnorm( 178 , 20 ) ,
-sigma ~ dunif( 0 , 50 )
-)
-```
-
-Fit the model to the data in the data frame
-```{r}
-m4.1 <- quap( flist , data=d2 )
+b4.1_half_cauchy <- 
+  brm(data = d2, family = gaussian,
+      formula = height ~ 1,
+      prior = c(prior(normal(178, 20), class = Intercept),
+                prior(cauchy(0, 1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
 ```
 
 Look at the posterior distribution
 ```{r}
-precis( m4.1 )
-```
-These numbers provide Gaussian approximations for each parameter’s marginal distribution.
-This means the plausibility of each value of \mu, after averaging over the plausibilities of each value of \sigma, is given by a Gaussian distribution with mean 154.6 and standard deviation 0.4.
-
-Change the prior to 0.1 (narrow variation) and run the model again.
-```{r}
-m4.2 <- quap(
-alist(
-height ~ dnorm( mu , sigma ) ,
-mu ~ dnorm( 178 , 0.1 ) ,
-sigma ~ dunif( 0 , 50 )
-) , data=d2 )
-precis( m4.2 )
+plot(b4.1_half_cauchy)
 ```
 
-Notice that the estimate for µ has hardly moved off the prior. The prior was very concentrated around 178. So this is not surprising. But also notice that the estimate for \sigma has changed quite a lot, even though we didn’t change its prior at all. Once the golem is certain that the mean is near 178---as the prior insists---then the golem has to estimate \sigma conditional on that fact. This results in a different posterior for \sigma, even though all we changed is prior information about the other parameter.
-
-Sample vectors of values from a multi-dimensional Gaussian distribution
+Check the summary
 ```{r}
-post <- extract.samples( m4.1 , n=1e4 )
+b4.1_half_cauchy$fit
+```
+
+Sampling from a brm() fit
+```{r}
+post <- posterior_samples(b4.1_half_cauchy)
+
 head(post)
+
+posterior_summary(b4.1_half_cauchy)
 ```
 
-You end up with a data frame, post, with 10,000 (1e4) rows and two columns, one column
-for \mu and one for \sigma. Each value is a sample from the posterior, so the mean and standard deviation of each column will be very close to the MAP values from before. You can confirm this by summarizing the samples:
+Adding a predictor to the model
 ```{r}
-precis(post)
-plot(post)
-```
-
-Adding a predictor---here weight
---------------------------------
-```{r}
-plot( d2$height ~ d2$weight )
-```
-
-The goal is to simulate observed heights from the model---with weight added. Set a seed to reproduce the code exactly. 
-```{r}
-set.seed(2971)
-N <- 100 # 100 lines
-a <- rnorm( N , 178 , 20 )
-b <- rnorm( N , 0 , 10 )
-```
-
-Now we have 200 pairs of α and β values. Now to plot the lines:
-```{r}
-plot( NULL , xlim=range(d2$weight) , ylim=c(-100,400) ,
-xlab="weight" , ylab="height" )
-abline( h=0 , lty=2 )
-abline( h=272 , lty=1 , lwd=0.5 )
-mtext( "b ~ dnorm(0,10)" )
-xbar <- mean(d2$weight)
-for ( i in 1:N ) curve( a[i] + b[i]*(x - xbar) ,
-from=min(d2$weight) , to=max(d2$weight) , add=TRUE ,
-col=col.alpha("black",0.2) )
-```
-For reference, I’ve added a dashed line at zero---no one is shorter than zero---and the “Wadlow” line at 272cm for the world’s tallest person. The pattern doesn’t look like any human population at all.
-
-We can do better immediately. We know that average height increases with average weight, at least up to a point. Let’s try restricting it to positive values. The easiest way to do this is to define the prior as Log-Normal instead. 
-```{r}
-b <- rlnorm( 1e4 , 0 , 1 )
-dens( b , xlim=c(0,5) , adj=0.1 )
-```
-
-Do the prior predictive simulation again, now with the Log-Normal prior:
-```{r}
-set.seed(2971)
-N <- 100 # 100 lines
-a <- rnorm( N , 178 , 20 )
-b <- rlnorm( N , 0 , 1 )
-
-# plot the lines
-plot( NULL , xlim=range(d2$weight) , ylim=c(-100,400) ,
-xlab="weight" , ylab="height" )
-abline( h=0 , lty=2 )
-abline( h=272 , lty=1 , lwd=0.5 )
-mtext( "b ~ dnorm(0,10)" )
-xbar <- mean(d2$weight)
-for ( i in 1:N ) curve( a[i] + b[i]*(x - xbar) ,
-from=min(d2$weight) , to=max(d2$weight) , add=TRUE ,
-col=col.alpha("black",0.2) )
-```
-
-Build the posterior approximation:
-```{r}
-# define the average weight, x-bar
-xbar <- mean(d2$weight)
-
-# fit model
-m4.3 <- quap(
-alist(
-height ~ dnorm( mu , sigma ) ,
-mu <- a + b*( weight - xbar ) ,
-a ~ dnorm( 178 , 20 ) ,
-b ~ dlnorm( 0 , 1 ) ,
-sigma ~ dunif( 0 , 50 )
-) ,
-data=d2 )
-```
-
-Inspect the marginal posterior distribution of the parameters
-```{r}
-precis( m4.3 )
-```
-
-```{r}
-plot( height ~ weight , data=d2 , col=rangi2 )
-post <- extract.samples( m4.3 )
-a_map <- mean(post$a)
-b_map <- mean(post$b)
-curve( a_map + b_map*(x - xbar) , add=TRUE )
+b4.3 <- 
+  brm(data = d2, family = gaussian,
+      formula = height ~ 1 + weight,
+      prior = c(prior(normal(156, 100), class = Intercept),
+                prior(normal(0, 10), class = b),
+                prior(cauchy(0, 1), class = sigma)),
+      iter = 41000, warmup = 40000, chains = 4, cores = 4)
 ```
 
 
