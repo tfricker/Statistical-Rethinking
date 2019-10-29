@@ -1,0 +1,148 @@
+---
+title: "Lecture 5 Code"
+author: "Tyler Fricker"
+date: "10/28/2019"
+output: html_document
+---
+
+Load packages
+```{r}
+library(brms)
+library(ggplot2)
+library(rethinking)
+```
+
+5H1
+```{r}
+data(foxes)
+
+formula1 <- weight ~ area
+get_prior(formula1, data = foxes)
+
+b5.1 <- brm(data = foxes, family = gaussian,
+      formula = weight ~ area,
+      prior = c(prior(student_t(3, 4, 10), class = Intercept),
+                prior(student_t(3, 0, 10), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary(b5.1)
+```
+
+Plot the results, MAP regression line, and the 95\% interval of the mean.
+```{r}
+area_seq <- data.frame(area = seq(from = min(foxes$area), to = max(foxes$area), length.out = 30))
+
+mu_summary <- data.frame(fitted(b5.1, 
+         newdata = area_seq)) %>%
+   bind_cols(area_seq)
+
+head(mu_summary)
+
+pred_weight <- data.frame(predict(b5.1,
+          newdata = area_seq)) %>%
+  bind_cols(area_seq)
+
+ggplot(data = foxes, aes(x = area)) +
+  geom_smooth(data = mu_summary,
+              aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+  #geom_abline(intercept = fixef(b4.5)[1], 
+  #            slope     = fixef(b4.5)[2]) +
+  geom_point(aes(y = weight), shape = 1, size = 2, color = "royalblue") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+
+5H2
+```{r}
+formula3 = weight ~ area + groupsize
+get_prior(formula3, data = foxes)
+
+b5.3 <- brm(data = foxes, family = gaussian,
+      formula = weight ~ area + groupsize,
+      prior = c(prior(student_t(3, 4, 10), class = Intercept),
+                prior(student_t(3, 0, 10), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary(b5.3)
+```
+
+Make counterfactual plots of these parameters
+
+This is for area
+```{r}
+library(dplyr)
+
+nd <- data.frame(area = seq(from = 1, to = 6, length.out = 30),
+         groupsize= mean(foxes$groupsize))
+
+counter1 <- fitted(b5.3, newdata = nd) %>% 
+  as_data_frame() %>%
+  # since `fitted()` and `predict()` name their intervals the same way, 
+  # we'll need to `rename()` them to keep them straight
+  rename(f_ll = Q2.5,
+         f_ul = Q97.5) %>% 
+  # note how we're just nesting the `predict()` code right inside `bind_cols()`
+  bind_cols(
+    predict(b5.3, newdata = nd) %>% 
+      as_data_frame() %>%
+      # since we only need the intervals, we'll use `transmute()` rather than `mutate()`
+      transmute(p_ll = Q2.5,
+                p_ul = Q97.5),
+    # now tack on the `nd` data
+    nd)
+  
+# we're finally ready to plot
+ggplot(counter1, aes(x = area, y = Estimate)) +
+  geom_ribbon(aes(ymin = p_ll, ymax = p_ul),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = f_ll, ymax = f_ul),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, size = 1/4) +
+  coord_cartesian(xlim = range(foxes$area),
+                  ylim = c(1, 8)) +
+  labs(subtitle = "Counterfactual plot for which\narea = 0",
+       y = "weight") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+This is for groupsize
+```{r}
+nd <- data.frame(groupsize = seq(from = 2, to = 8, length.out = 30),
+         area= mean(foxes$area))
+
+counter2 <- fitted(b5.3, newdata = nd) %>% 
+  as_data_frame() %>%
+  # since `fitted()` and `predict()` name their intervals the same way, 
+  # we'll need to `rename()` them to keep them straight
+  rename(f_ll = Q2.5,
+         f_ul = Q97.5) %>% 
+  # note how we're just nesting the `predict()` code right inside `bind_cols()`
+  bind_cols(
+    predict(b5.3, newdata = nd) %>% 
+      as_data_frame() %>%
+      # since we only need the intervals, we'll use `transmute()` rather than `mutate()`
+      transmute(p_ll = Q2.5,
+                p_ul = Q97.5),
+    # now tack on the `nd` data
+    nd)
+  
+# we're finally ready to plot
+ggplot(counter2, aes(x = groupsize, y = Estimate)) +
+  geom_ribbon(aes(ymin = p_ll, ymax = p_ul),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = f_ll, ymax = f_ul),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, size = 1/4) +
+  coord_cartesian(xlim = range(foxes$groupsize),
+                  ylim = c(1, 8)) +
+  labs(subtitle = "Counterfactual plot for which\ngroupsize = 0",
+       y = "weight") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+
