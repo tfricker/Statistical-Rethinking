@@ -28,7 +28,7 @@ b5.1 <- brm(data = foxes, family = gaussian,
 summary(b5.1)
 ```
 
-Plot the results, MAP regression line, and the 95\% interval of the mean.
+Plot the results, MAP regression line, and the 95\% interval of the mean for area.
 ```{r}
 area_seq <- data.frame(area = seq(from = min(foxes$area), to = max(foxes$area), length.out = 30))
 
@@ -43,6 +43,45 @@ pred_weight <- data.frame(predict(b5.1,
   bind_cols(area_seq)
 
 ggplot(data = foxes, aes(x = area)) +
+  geom_smooth(data = mu_summary,
+              aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+  #geom_abline(intercept = fixef(b4.5)[1], 
+  #            slope     = fixef(b4.5)[2]) +
+  geom_point(aes(y = weight), shape = 1, size = 2, color = "royalblue") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+Now for groupsize
+```{r}
+formula2 <- weight ~ groupsize
+get_prior(formula1, data = foxes)
+
+b5.2 <- brm(data = foxes, family = gaussian,
+      formula = weight ~ groupsize,
+      prior = c(prior(student_t(3, 4, 10), class = Intercept),
+                prior(student_t(3, 0, 10), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary(b5.2)
+```
+
+```{r}
+groupsize_seq <- data.frame(groupsize = seq(from = min(foxes$groupsize), to = max(foxes$groupsize), length.out = 30))
+
+mu_summary <- data.frame(fitted(b5.2, 
+         newdata = groupsize_seq)) %>%
+   bind_cols(groupsize_seq)
+
+head(mu_summary)
+
+pred_weight <- data.frame(predict(b5.2,
+          newdata = groupsize_seq)) %>%
+  bind_cols(groupsize_seq)
+
+ggplot(data = foxes, aes(x = groupsize)) +
   geom_smooth(data = mu_summary,
               aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
               stat = "identity",
