@@ -184,4 +184,113 @@ ggplot(counter2, aes(x = groupsize, y = Estimate)) +
   theme(panel.grid = element_blank()) 
 ```
 
+5H3
 
+(1)
+```{r}
+formula4 = weight ~ avgfood + groupsize
+get_prior(formula4, data = foxes)
+
+b5.4 <- brm(data = foxes, family = gaussian,
+      formula = weight ~ avgfood + groupsize,
+      prior = c(prior(student_t(3, 4, 10), class = Intercept),
+                prior(student_t(3, 0, 10), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary(b5.4)
+```
+
+Make counterfactual plots of these parameters
+
+This is for avgfood
+```{r}
+nd <- data.frame(avgfood = seq(from = 0, to = 1.25, length.out = 30),
+         groupsize= mean(foxes$groupsize))
+
+counter1 <- fitted(b5.4, newdata = nd) %>% 
+  as_data_frame() %>%
+  # since `fitted()` and `predict()` name their intervals the same way, 
+  # we'll need to `rename()` them to keep them straight
+  rename(f_ll = Q2.5,
+         f_ul = Q97.5) %>% 
+  # note how we're just nesting the `predict()` code right inside `bind_cols()`
+  bind_cols(
+    predict(b5.4, newdata = nd) %>% 
+      as_data_frame() %>%
+      # since we only need the intervals, we'll use `transmute()` rather than `mutate()`
+      transmute(p_ll = Q2.5,
+                p_ul = Q97.5),
+    # now tack on the `nd` data
+    nd)
+  
+# we're finally ready to plot
+ggplot(counter1, aes(x = avgfood, y = Estimate)) +
+  geom_ribbon(aes(ymin = p_ll, ymax = p_ul),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = f_ll, ymax = f_ul),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, size = 1/4) +
+  coord_cartesian(xlim = range(foxes$avgfood),
+                  ylim = c(1, 8)) +
+  labs(subtitle = "Counterfactual plot for which\nvgfood = 0",
+       y = "weight") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+This is for groupsize
+```{r}
+nd <- data.frame(groupsize = seq(from = 2, to = 8, length.out = 30),
+         avgfood= mean(foxes$avgfood))
+
+counter1 <- fitted(b5.4, newdata = nd) %>% 
+  as_data_frame() %>%
+  # since `fitted()` and `predict()` name their intervals the same way, 
+  # we'll need to `rename()` them to keep them straight
+  rename(f_ll = Q2.5,
+         f_ul = Q97.5) %>% 
+  # note how we're just nesting the `predict()` code right inside `bind_cols()`
+  bind_cols(
+    predict(b5.4, newdata = nd) %>% 
+      as_data_frame() %>%
+      # since we only need the intervals, we'll use `transmute()` rather than `mutate()`
+      transmute(p_ll = Q2.5,
+                p_ul = Q97.5),
+    # now tack on the `nd` data
+    nd)
+  
+# we're finally ready to plot
+ggplot(counter1, aes(x = groupsize, y = Estimate)) +
+  geom_ribbon(aes(ymin = p_ll, ymax = p_ul),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = f_ll, ymax = f_ul),
+              stat = "identity",
+              fill = "firebrick", color = "firebrick4", alpha = 1/5, size = 1/4) +
+  coord_cartesian(xlim = range(foxes$groupsize),
+                  ylim = c(1, 8)) +
+  labs(subtitle = "Counterfactual plot for which\ngroupsize = 0",
+       y = "weight") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+(2)
+```{r}
+formula5 = weight ~ avgfood + groupsize + area
+get_prior(formula5, data = foxes)
+
+b5.5 <- brm(data = foxes, family = gaussian,
+      formula = weight ~ avgfood + groupsize + area,
+      prior = c(prior(student_t(3, 4, 10), class = Intercept),
+                prior(student_t(3, 0, 10), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary(b5.5)
+```
+
+Compare models
+```{r}
+summary(b5.3); summary(b5.4); summary(b5.5)
+```
+
+Keep avgfood, because it is the more important predictor (standardized Estimate is highest).
